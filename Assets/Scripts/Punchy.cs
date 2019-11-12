@@ -71,6 +71,7 @@ public class Punchy : MonoBehaviour
     private bool _canPunch = true;
     private bool _maintainPosition;
     private Vector3 _punchAngles;
+    private float _angle = 0f;
 
     private void OnStateChanged()
     {
@@ -144,7 +145,7 @@ public class Punchy : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        if (Input.GetMouseButtonDown(0) && (_state == CharState.Idle || _state == CharState.Falling))
+        if (Input.GetMouseButtonDown(0) && (_state == CharState.Idle || _state == CharState.Falling) && _canPunch)
         {
             state = CharState.Charging;
         }
@@ -169,7 +170,7 @@ public class Punchy : MonoBehaviour
         if (state == CharState.Punching && !_anim.GetCurrentAnimatorStateInfo(0).IsName("Punch"))
         {
             //Debug.Log("I just Finished punching");
-            StartCoroutine(CheckIfInAir());
+            StartCoroutine(CheckIfInAir(0.5f));
         }
 
         if (state == CharState.Falling && !_inAir)
@@ -178,13 +179,22 @@ public class Punchy : MonoBehaviour
         }
         if (state == CharState.Landing && !_anim.GetCurrentAnimatorStateInfo(0).IsName("Land"))
         {
-            state = CharState.Idle;
+            if (_inAir)
+            {
+                //Debug.Log("I'm falling after punching!");
+                state = CharState.Falling;
+            }
+            else
+            {
+                //Debug.Log("I'm on the ground after punching!");
+                state = CharState.Idle;
+            }
         }
     }
 
-    private IEnumerator CheckIfInAir()
+    private IEnumerator CheckIfInAir(float t)
     {
-        yield return new WaitForSecondsRealtime(0.5f);
+        yield return new WaitForSecondsRealtime(t);
         if (_inAir)
         {
             //Debug.Log("I'm falling after punching!");
@@ -200,34 +210,33 @@ public class Punchy : MonoBehaviour
 
     void LateUpdate()
     {
+        
         if ((Input.GetMouseButtonDown(0) || (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began)) && _canPunch)
         {
             _charging = true;
-            _canPunch = false;
+            
             Debug.Log("Starting punch");
         }
-        else if ((Input.GetMouseButton(0) || (Input.touchCount > 0 && (Input.GetTouch(0).phase == TouchPhase.Moved || Input.GetTouch(0).phase == TouchPhase.Stationary))) && _charging)
+        else if ((Input.GetMouseButton(0) || (Input.touchCount > 0 && (Input.GetTouch(0).phase == TouchPhase.Moved || Input.GetTouch(0).phase == TouchPhase.Stationary))) && state == CharState.Charging)
         {
 
             Vector2 difference = (Vector2)_cursor.position - (Vector2)_cursorTarget.position;
             float sign = (((Vector2)_cursor.position).y < ((Vector2)_cursorTarget.position).y) ? -1.0f : 1.0f;
-            float angle = Vector2.Angle(Vector2.right, difference) * sign;
+            _angle = Vector2.Angle(Vector2.right, difference) * sign;
 
             Vector3 newHeadAngles = _arm.localEulerAngles;
-            newHeadAngles.z = angle + 180;
+            newHeadAngles.z = _angle + 180;
             
             _arm.localEulerAngles = newHeadAngles;
         }
-        else if ((Input.GetMouseButtonUp(0) || (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Ended)) && _charging)
+        else if ((Input.GetMouseButtonUp(0) || (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Ended)) && state == CharState.Punching)
         {
+            _canPunch = false;
             //Punch
-            Vector2 difference = (Vector2)_cursor.position - (Vector2)_cursorTarget.position;
-            float sign = (((Vector2)_cursor.position).y < ((Vector2)_cursorTarget.position).y) ? -1.0f : 1.0f;
-            float angle = Vector2.Angle(Vector2.right, difference) * sign;
 
             Vector3 newAngles = transform.localEulerAngles;
 
-            newAngles.z = angle;
+            newAngles.z = _angle;
 
             if (direction == CharacterDirection.Left)
             {
@@ -251,7 +260,7 @@ public class Punchy : MonoBehaviour
         }
         
 
-        if (_inAir && _charging)
+        if (_inAir && state == CharState.Charging)
         {
             Vector3 newVelocity = _rb.velocity;
             newVelocity.y = newVelocity.y * 0.85f;
@@ -259,7 +268,7 @@ public class Punchy : MonoBehaviour
 
             _rb.gravityScale = 0.5f;
         }
-        else if (!_inAir || !_charging)
+        else if (!_inAir || state != CharState.Charging)
         {
             _rb.gravityScale = 2f;
         }
@@ -296,7 +305,7 @@ public class Punchy : MonoBehaviour
 
     private IEnumerator ResetRotation(float t)
     {
-        yield return new WaitForSeconds(0.4f);
+        yield return new WaitForSeconds(0.5f);
         float elapsedTime = 0;
         Vector3 newAngles = transform.eulerAngles;
         newAngles.z = 0;
@@ -323,11 +332,8 @@ public class Punchy : MonoBehaviour
                 
                 _inAir = false;
                 _anim.SetTrigger("Land");
-                if(state == CharState.Falling)
-                {
-                    state = CharState.Landing;
-                    
-                }
+                state = CharState.Landing;
+                
             }
             else
             {
