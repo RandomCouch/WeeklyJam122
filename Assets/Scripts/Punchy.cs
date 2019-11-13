@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 public enum CharState
@@ -27,6 +28,22 @@ public class Punchy : MonoBehaviour
 
     [SerializeField]
     private Transform _cursorTarget;
+
+    [SerializeField]
+    private Transform _wallFrontDetector;
+
+    [SerializeField]
+    private Transform _wallBackDetector;
+
+    [SerializeField]
+    private SpriteRenderer _sr;
+
+    [SerializeField]
+    private SpriteRenderer _sr2;
+
+    public static Punchy Instance;
+
+    private Coroutine _disableCR;
 
     [SerializeField]
     private CharState _state;
@@ -59,9 +76,15 @@ public class Punchy : MonoBehaviour
             {
                 _dir = value;
             }
-            OnDirectionChanged();
+            if (!_onWall)
+            {
+                OnDirectionChanged();
+            }
+            
         }
     }
+
+    private bool _disabled = false;
 
     private Animator _anim;
     [SerializeField]
@@ -71,21 +94,29 @@ public class Punchy : MonoBehaviour
     private bool _canPunch = true;
     private bool _maintainPosition;
     private Vector3 _punchAngles;
+    private Vector2 _wallSlidePos;
     private float _angle = 0f;
+    [SerializeField]
+    private bool _onWall;
+    [SerializeField]
+    private float _punchStrength;
+    [SerializeField]
+    private float _punchReloadSpeed;
 
     private void OnStateChanged()
     {
         switch (_state)
         {
             case CharState.Idle:
-                _anim.SetBool("Charging", false);
+                //_anim.SetBool("Charging", false);
                 _anim.SetBool("Falling", false);
                 _anim.SetBool("Punch", false);
                 _maintainPosition = false;
+                _anim.ResetTrigger("Land");
                 break;
             case CharState.Charging:
                 _anim.SetBool("Charging", true);
-                _anim.SetBool("Falling", false);
+                //_anim.SetBool("Falling", false);
                 break;
             case CharState.Punching:
                 _anim.SetBool("Punch", true);
@@ -98,12 +129,13 @@ public class Punchy : MonoBehaviour
                 _anim.SetBool("Charging", false);
                 _anim.SetBool("Falling", true);
                 _maintainPosition = false;
+                
                 break;
             case CharState.Landing:
                 _anim.SetTrigger("Land");
-                _anim.SetBool("Charging", false);
+                //_anim.SetBool("Charging", false);
                 _anim.SetBool("Falling", false);
-                _anim.SetBool("Punch", false);
+                //_anim.SetBool("Punch", false);
                 break;
         }
     }
@@ -113,6 +145,7 @@ public class Punchy : MonoBehaviour
         Debug.Log("Switching direction to : " + _dir.ToString());
         Vector3 newScale;
         Vector3 newArmAngles;
+        
         switch (_dir)
         {
             case CharacterDirection.Right:
@@ -140,17 +173,27 @@ public class Punchy : MonoBehaviour
         _anim = GetComponent<Animator>();
         _rb = GetComponent<Rigidbody2D>();
         _state = CharState.Idle;
+        if(Instance == null)
+        {
+            Instance = this;
+        }
     }
 
     // Update is called once per frame
     void Update()
     {
-        if (Input.GetMouseButtonDown(0) && (_state == CharState.Idle || _state == CharState.Falling) && _canPunch)
+        if (_disabled)
+        {
+            return;
+        }
+
+        if (Input.GetMouseButtonDown(0) && (_state != CharState.Punching) && _canPunch)
         {
             state = CharState.Charging;
         }
-        else if (Input.GetMouseButton(0) && _state == CharState.Charging)
+        else if (Input.GetMouseButton(0))
         {
+            state = CharState.Charging;
             if (_cursor.position.x < _cursorTarget.position.x)
             {
                 //Debug.Log("Changing direction to RIGHT");
@@ -161,6 +204,7 @@ public class Punchy : MonoBehaviour
                 //Debug.Log("Changing direction to LEFT");
                 direction = CharacterDirection.Left;
             }
+            state = CharState.Charging;
         }
         else if (Input.GetMouseButtonUp(0) && _state == CharState.Charging)
         {
@@ -170,7 +214,7 @@ public class Punchy : MonoBehaviour
         if (state == CharState.Punching && !_anim.GetCurrentAnimatorStateInfo(0).IsName("Punch"))
         {
             //Debug.Log("I just Finished punching");
-            StartCoroutine(CheckIfInAir(0.5f));
+            StartCoroutine(CheckIfInAir(0.3f));
         }
 
         if (state == CharState.Falling && !_inAir)
@@ -190,6 +234,99 @@ public class Punchy : MonoBehaviour
                 state = CharState.Idle;
             }
         }
+
+        if (_inAir)
+        {
+            //Check wall
+            /*
+            if(Physics2D.OverlapCircle(transform.position, 10, 8))
+            {
+                //We are on a wall
+
+            }
+            */
+        }
+        else
+        {
+            _onWall = false;
+        }
+
+        _anim.SetBool("OnWall", _onWall);
+        _anim.SetBool("Falling", _inAir);
+        Debug.DrawRay(_wallFrontDetector.position, _wallFrontDetector.right, Color.blue);
+        Debug.DrawRay(_wallBackDetector.position, -_wallBackDetector.right, Color.blue);
+
+        List<Collider2D> results = new List<Collider2D>();
+        ContactFilter2D contactFilter = new ContactFilter2D();
+        contactFilter.SetLayerMask(LayerMask.GetMask("Stage"));
+
+        Vector3 rayDir = _wallFrontDetector.right;
+        if(direction == CharacterDirection.Left)
+        {
+            rayDir = -_wallFrontDetector.right;
+        }
+
+        List<Collider2D> hits = Physics2D.OverlapCircleAll(_wallFrontDetector.position, 0.25f).ToList();
+        //hits.AddRange(Physics2D.RaycastAll(_wallBackDetector.position, -_wallBackDetector.right, 1f).ToList());
+        if (hits.Contains(GetComponent<Collider2D>()))
+        {
+            hits.Remove(GetComponent<Collider2D>());
+        }
+
+        //Debug.Log("Ray hit " + hits.Count + " things");
+        List<Collider2D> hitsToRemove = new List<Collider2D>();
+        foreach(Collider2D hit in hits)
+        {
+            if (hit.transform != transform && hit.tag != "Enemy")
+            {
+                if (_inAir && state != CharState.Charging)
+                {
+                    //we wanna be stuck on this wall
+                    //Debug.Log("I'm on a wall!");
+                    Vector2 newVelocity = new Vector2(0, _rb.velocity.y);
+                    newVelocity.y *= 0.5f;
+
+                    _rb.velocity = newVelocity;
+                    _wallSlidePos = transform.position;
+                    _anim.SetBool("OnWall", true);
+                    _onWall = true;
+                }
+            }
+            else
+            {
+                hitsToRemove.Add(hit);
+            }
+        }
+
+        foreach(Collider2D hit  in hitsToRemove)
+        {
+            hits.Remove(hit);
+        }
+        if(hits.Count == 0)
+        {
+            _onWall = false;
+        }
+        /*
+        if(Physics2D.OverlapBox(_wallFrontDetector.position, new Vector2(2,2), 0f, contactFilter, results))
+        {
+            foreach(Collider2D result in results)
+            {
+                Debug.Log("Hitting " + result.name);
+            }
+            if (_inAir && state != CharState.Charging)
+            {
+                //we wanna be stuck on this wall
+                Debug.Log("I'm on a wall!");
+                Vector2 newVelocity = new Vector2(0, _rb.velocity.y);
+                newVelocity.y *= 0.5f;
+
+                _rb.velocity = newVelocity;
+                _wallSlidePos = transform.position;
+                _anim.SetBool("OnWall", true);
+                _onWall = true;
+            }
+        }
+        */
     }
 
     private IEnumerator CheckIfInAir(float t)
@@ -210,12 +347,20 @@ public class Punchy : MonoBehaviour
 
     void LateUpdate()
     {
-        
+        if (_disabled)
+        {
+            return;
+        }
+
+        if (_onWall)
+        {
+            transform.position = new Vector2(_wallSlidePos.x, transform.position.y);
+        }
         if ((Input.GetMouseButtonDown(0) || (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began)) && _canPunch)
         {
             _charging = true;
             
-            Debug.Log("Starting punch");
+            //Debug.Log("Starting punch");
         }
         else if ((Input.GetMouseButton(0) || (Input.touchCount > 0 && (Input.GetTouch(0).phase == TouchPhase.Moved || Input.GetTouch(0).phase == TouchPhase.Stationary))) && state == CharState.Charging)
         {
@@ -225,13 +370,30 @@ public class Punchy : MonoBehaviour
             _angle = Vector2.Angle(Vector2.right, difference) * sign;
 
             Vector3 newHeadAngles = _arm.localEulerAngles;
-            newHeadAngles.z = _angle + 180;
+            if (_onWall)
+            {
+                if(direction == CharacterDirection.Left)
+                {
+                    newHeadAngles.z = _angle + 360;
+                }
+                else
+                {
+                    newHeadAngles.z = -_angle + 180;
+                }
+                
+            }
+            else
+            {
+                newHeadAngles.z = _angle + 180;
+            }
+            
             
             _arm.localEulerAngles = newHeadAngles;
         }
         else if ((Input.GetMouseButtonUp(0) || (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Ended)) && state == CharState.Punching)
         {
             _canPunch = false;
+            _onWall = false;
             //Punch
 
             Vector3 newAngles = transform.localEulerAngles;
@@ -248,17 +410,23 @@ public class Punchy : MonoBehaviour
                 //newAngles.z += 180f;
             }
 
+            OnDirectionChanged();
+
+
             _punchAngles = newAngles;
             _charging = false;
             newAngles.z += 180;
             
             transform.eulerAngles = newAngles;
-            Vector3 chargeMovement = transform.right * 20;
+            float dragDistance = Vector3.Distance(_cursor.transform.position, _cursorTarget.transform.position);
+            Debug.Log("Drag distance was :" + dragDistance);
+            Vector3 chargeMovement = transform.right * dragDistance * _punchStrength;
             Debug.DrawRay(_arm.position, chargeMovement, Color.green);
             StartCoroutine(Charge(chargeMovement));
-            StartCoroutine(ReloadPunch(0.5f));
+            StartCoroutine(ReloadPunch(_punchReloadSpeed));
         }
         
+
 
         if (_inAir && state == CharState.Charging)
         {
@@ -269,6 +437,19 @@ public class Punchy : MonoBehaviour
             _rb.gravityScale = 0.5f;
         }
         else if (!_inAir || state != CharState.Charging)
+        {
+            _rb.gravityScale = 2f;
+        }
+
+        if (_onWall && _inAir)
+        {
+            Vector3 newVelocity = _rb.velocity;
+            newVelocity.y = newVelocity.y * 0.85f;
+            _rb.velocity = newVelocity;
+
+            _rb.gravityScale = 1f;
+        }
+        else if (state != CharState.Charging)
         {
             _rb.gravityScale = 2f;
         }
@@ -285,10 +466,32 @@ public class Punchy : MonoBehaviour
             }
             transform.eulerAngles = newAngles;
         }
+        
+    }
+
+    public void DisablePlayer(float t)
+    {
+        if(_disableCR != null)
+        {
+            StopCoroutine(_disableCR);
+        }
+        _disableCR = StartCoroutine(DisablePlayerCR(t));
+    }
+
+    private IEnumerator DisablePlayerCR(float t)
+    {
+        _disabled = true;
+        _sr.color = Color.red;
+        _sr2.color = Color.red;
+        yield return new WaitForSeconds(t);
+        _sr.color = Color.white;
+        _sr2.color = Color.white;
+        _disabled = false;
     }
 
     private IEnumerator Charge(Vector3 chargeMovement)
     {
+        _rb.isKinematic = false;
         yield return new WaitForEndOfFrame();
         _arm.localEulerAngles = Vector3.zero;
         _rb.AddForce(chargeMovement, ForceMode2D.Impulse);
@@ -323,22 +526,90 @@ public class Punchy : MonoBehaviour
 
     private void OnCollisionEnter2D(Collision2D collision)
     {
+        if (collision.gameObject.tag == "Walls")
+        {
+            
+            if(state == CharState.Falling)
+            {
+                //BoxCollider2D collider = GetComponent<BoxCollider2D>();
+                //collider.enabled = false;
+                //_rb.gravityScale = 0f;
+                Vector2 newVelocity = new Vector2(0, _rb.velocity.y);
+                newVelocity.y *= 0.5f;
+                
+                _rb.velocity = newVelocity;
+                _wallSlidePos = transform.position;
+                _anim.SetBool("OnWall", true);
+                _onWall = true;
+            }
+            
+        }
         //check if ground
-        if(collision.gameObject.tag == "Stage")
+        if (collision.gameObject.tag == "Stage")
         {
             if(collision.contacts[0].point.y < transform.position.y)
             {
                 //we hit the ground
                 
                 _inAir = false;
-                _anim.SetTrigger("Land");
-                state = CharState.Landing;
+                if(state != CharState.Charging)
+                {
+                    state = CharState.Landing;
+                }
                 
+                _onWall = false;
             }
             else
             {
                 //we hit a ceiling
             }
+        }
+        if(collision.gameObject.tag == "Enemy")
+        {
+            Enemy enemyScript = collision.gameObject.GetComponent<Enemy>();
+            Rigidbody2D enemyRb = collision.gameObject.GetComponent<Rigidbody2D>();
+            if (state == CharState.Punching)
+            {
+                
+                //enemyRb.velocity = _rb.velocity * 5f;
+                enemyRb.AddForceAtPosition(new Vector2(6, 6), transform.position, ForceMode2D.Impulse);
+                
+                enemyScript.DisableEnemy(1.25f);
+                enemyScript.TakeDamage(1);
+            }
+            else
+            {
+                if (!enemyScript.IsDead())
+                {
+                    enemyRb.AddForceAtPosition(new Vector2(3, 3), transform.position, ForceMode2D.Impulse);
+                    _rb.AddForceAtPosition(new Vector2(3, 3), collision.transform.position, ForceMode2D.Impulse);
+                    DisablePlayer(0.35f);
+                }
+                
+            }
+        }
+    }
+
+    private void OnCollisionStay(Collision collision)
+    {
+        if (collision.gameObject.tag == "Walls")
+        {
+
+
+            //BoxCollider2D collider = GetComponent<BoxCollider2D>();
+            //collider.enabled = false;
+            //_rb.gravityScale = 0f;
+            Vector2 newVelocity = new Vector2(0, _rb.velocity.y);
+            if (_rb.velocity.y < 0)
+            {
+                newVelocity.y *= 0.25f;
+            }
+            else
+            {
+                newVelocity.y *= 1.25f;
+            }
+            _rb.velocity = newVelocity;
+            transform.position = new Vector2(_wallSlidePos.x, transform.position.y);
         }
     }
 
@@ -349,6 +620,11 @@ public class Punchy : MonoBehaviour
         {
             _inAir = true;
             _anim.SetBool("Falling", true);
+        }
+        if (collision.gameObject.tag == "Walls")
+        {
+            _anim.SetBool("OnWall", false);
+            _onWall = false;
         }
     }
 }

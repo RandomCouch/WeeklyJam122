@@ -410,9 +410,9 @@ public class PuncherMan : MonoBehaviour
 
     private void OnCollisionEnter2D(Collision2D collision)
     {
-        if(collision.gameObject.tag == "Walls" && state != CharState.Punching)
+        if(collision.gameObject.tag == "Walls")
         {
-            _rb.isKinematic = true;
+            //_rb.isKinematic = true;
             BoxCollider2D collider = GetComponent<BoxCollider2D>();
             collider.enabled = false;
             //_rb.gravityScale = 0f;
