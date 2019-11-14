@@ -18,11 +18,14 @@ public class Cursor : MonoBehaviour
 
     private Vector2 _startMousePos;
     private Vector3 _oldStartPos = Vector3.zero;
+    
     // Start is called before the first frame update
     void Start()
     {
-        UnityEngine.Cursor.visible = false; 
+        
     }
+
+
 
     // Update is called once per frame
     private void FixedUpdate()

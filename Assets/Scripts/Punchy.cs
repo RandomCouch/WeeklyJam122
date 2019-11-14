@@ -493,6 +493,7 @@ public class Punchy : MonoBehaviour
     {
         _rb.isKinematic = false;
         yield return new WaitForEndOfFrame();
+        AudioManager.Instance.PlayPunchFX();
         _arm.localEulerAngles = Vector3.zero;
         _rb.AddForce(chargeMovement, ForceMode2D.Impulse);
         //StartCoroutine(ResetRotation(0.5f));
@@ -573,17 +574,23 @@ public class Punchy : MonoBehaviour
                 
                 //enemyRb.velocity = _rb.velocity * 5f;
                 enemyRb.AddForceAtPosition(new Vector2(6, 6), transform.position, ForceMode2D.Impulse);
-                
-                enemyScript.DisableEnemy(1.25f);
+                _rb.AddForce(transform.up * 10, ForceMode2D.Impulse);
+               
                 enemyScript.TakeDamage(1);
+
+                AudioManager.Instance.PlayEnemyHitFX();
             }
             else
             {
-                if (!enemyScript.IsDead())
+                if (!enemyScript.IsDead() && !enemyScript.IsDisabled())
                 {
-                    enemyRb.AddForceAtPosition(new Vector2(3, 3), transform.position, ForceMode2D.Impulse);
-                    _rb.AddForceAtPosition(new Vector2(3, 3), collision.transform.position, ForceMode2D.Impulse);
+                    enemyRb.AddForceAtPosition(new Vector2(5, 5), transform.position, ForceMode2D.Impulse);
+                    _rb.AddForceAtPosition(new Vector2(5, -5), collision.transform.position, ForceMode2D.Impulse);
+                    _rb.AddForce(-transform.up * 20, ForceMode2D.Impulse);
                     DisablePlayer(0.35f);
+                    GameManager.Instance.GotHit();
+
+                    AudioManager.Instance.PlayHitFX();
                 }
                 
             }

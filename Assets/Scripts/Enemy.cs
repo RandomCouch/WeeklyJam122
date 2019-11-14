@@ -83,6 +83,11 @@ public class Enemy : MonoBehaviour
         return _curHP <= 0;
     }
 
+    public bool IsDisabled()
+    {
+        return _disabled;
+    }
+
     public void TakeDamage(int damage)
     {
         Instantiate(_hitEffectPrefab, transform.position, Quaternion.identity);
@@ -90,6 +95,10 @@ public class Enemy : MonoBehaviour
         if(_curHP <= 0)
         {
             Die();
+        }
+        else
+        {
+            DisableEnemy(1.25f);
         }
     }
 
@@ -109,9 +118,11 @@ public class Enemy : MonoBehaviour
         _sr.color = Color.red;
         _disabled = true;
         _rb.gravityScale = 2f;
-        yield return new WaitForSeconds(2f);
+        yield return new WaitForSeconds(1f);
         StopAllCoroutines();
         Instantiate(_dieEffectPrefab, transform.position, Quaternion.identity);
+        AudioManager.Instance.PlayEnemyDieFX();
+        GameManager.Instance.KilledEnemy();
         Destroy(gameObject);
     }
 
